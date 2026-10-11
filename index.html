@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RRecM - 高音質システムオーディオレコーダー</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- lamejs (MP3エンコーダー: ローカル優先 + CDNフォールバック) -->
+  <script src="lame.min.js"></script>
+  <script>
+    if (typeof lamejs === 'undefined') {
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js';
+      document.head.appendChild(script);
+    }
+  </script>
+</head>
+<body>
+  <!-- 背景オーバーレイ -->
+  <div class="bg-overlay"></div>
+
+  <!-- アプリメインウィンドウ (RRecM スタジオスタイル) -->
+  <main class="app-container" role="main">
+    <!-- ウィンドウヘッダー -->
+    <header class="window-header">
+      <div class="window-title">
+        <span>RRecM</span>
+        <span class="title-badge">STUDIO AUDIO REC</span>
+      </div>
+      <div class="header-status-indicator">
+        <div class="status-dot" id="systemStatusDot"></div>
+        <span id="systemStatusText">STANDBY</span>
+      </div>
+    </header>
+
+    <div class="window-content">
+      <!-- 放送スタジオ用 ON AIR サインランプ -->
+      <section class="on-air-section" aria-label="ON AIR インジケーター">
+        <div class="on-air-frame" id="onAirFrame">
+          <div class="on-air-plate">
+            <span class="on-air-text">ON AIR</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 上部: 設定エリア (タイトル & ビットレート) -->
+      <section class="settings-section" aria-label="録音設定">
+        <!-- タイトル入力行 -->
+        <div class="setting-row">
+          <div class="gold-badge">
+            <span>タイトル</span>
+          </div>
+          <div class="input-container">
+            <input 
+              type="text" 
+              id="titleInput" 
+              class="glass-input" 
+              maxlength="100" 
+              placeholder="タイトルを入力 / 録音日時を自動付加" 
+              list="titleSuggestions"
+              autocomplete="off"
+            >
+            <!-- 直近10件の録音履歴サジェスト用 datalist -->
+            <datalist id="titleSuggestions"></datalist>
+          </div>
+        </div>
+
+        <!-- 音質スライダー (ビットレート選択) 行 -->
+        <div class="setting-row">
+          <div class="gold-badge">
+            <span>ビットレート</span>
+          </div>
+          <div class="slider-container">
+            <div class="slider-header">
+              <span class="bitrate-value-pill" id="bitrateDisplay">192 kbps</span>
+            </div>
+            <!-- 5段階 (0〜4) の音質スライダー -->
+            <input 
+              type="range" 
+              id="bitrateSlider" 
+              class="glass-slider" 
+              min="0" 
+              max="4" 
+              step="1" 
+              value="2"
+              aria-label="ビットレート選択"
+            >
+            <div class="slider-marks">
+              <span data-step="0">96k</span>
+              <span data-step="1">128k</span>
+              <span data-step="2" class="active">192k</span>
+              <span data-step="3">256k</span>
+              <span data-step="4">320k</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 中央: ディスプレイパネル (タイマー & レベルメーター) -->
+      <section class="display-panel" aria-label="ステータス表示">
+        <div class="display-main">
+          <div class="rec-state-box">
+            <div class="rec-blinker" id="recBlinker"></div>
+            <span class="rec-state-text" id="recStateLabel">待機中</span>
+          </div>
+          <div class="timer-digits" id="timerDigits">00:00:00</div>
+        </div>
+
+        <!-- ステレオ VUメーター (L/R) -->
+        <div class="meter-container" title="リアルタイムオーディオレベル">
+          <div class="meter-row">
+            <span class="meter-label">L</span>
+            <div class="meter-track">
+              <div class="meter-bar" id="meterBarL"></div>
+            </div>
+          </div>
+          <div class="meter-row">
+            <span class="meter-label">R</span>
+            <div class="meter-track">
+              <div class="meter-bar" id="meterBarR"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-sub-info">
+          <span id="audioSpecInfo">Audio: 48,000 Hz / Stereo PCM</span>
+          <span class="dir-current-tag" id="currentDirTag" title="現在の保存先">保存先: ブラウザ標準ダウンロード</span>
+        </div>
+      </section>
+
+      <!-- 下部: コントロールボタン群 (半透明・すりガラス・インセット凹み) -->
+      <footer class="controls-section" aria-label="操作ボタン群">
+        <!-- 録音 / 停止 トグルボタン -->
+        <button 
+          id="btnRecordToggle" 
+          class="studio-btn rec-btn" 
+          type="button" 
+          title="録音を開始 / 停止します"
+        >
+          <img id="recBtnIcon" src="rec.png" alt="REC">
+          <span class="btn-caption" id="recBtnCaption">録音開始</span>
+        </button>
+
+        <!-- 保存先フォルダ選択ボタン -->
+        <button 
+          id="btnSelectDir" 
+          class="studio-btn" 
+          type="button" 
+          title="保存先フォルダを指定・確認"
+        >
+          <img src="MusicDir.png" alt="フォルダ">
+          <span class="btn-caption">保存先選択</span>
+        </button>
+
+        <!-- 背景変更ボタン -->
+        <button 
+          id="btnChangeBg" 
+          class="studio-btn" 
+          type="button" 
+          title="背景画像を好みの画像（JPG/PNG/WebP）に変更"
+        >
+          <svg viewBox="0 0 24 24">
+            <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>
+          </svg>
+          <span class="btn-caption">背景変更</span>
+        </button>
+
+        <!-- 終了ボタン (history.back) -->
+        <button 
+          id="btnCloseApp" 
+          class="studio-btn" 
+          type="button" 
+          title="アプリを終了します"
+        >
+          <img src="exit.png" alt="終了">
+          <span class="btn-caption">終了</span>
+        </button>
+      </footer>
+    </div>
+
+    <!-- エンコード中モーダル -->
+    <div class="modal-overlay" id="encodeModal">
+      <div class="modal-box">
+        <h3 class="modal-title">高音質 MP3 エンコード中...</h3>
+        <div class="progress-bar-track">
+          <div class="progress-bar-fill" id="encodeProgressFill"></div>
+        </div>
+        <div class="progress-text" id="encodeProgressText">0%</div>
+      </div>
+    </div>
+  </main>
+
+  <!-- 非表示ファイル入力 (背景画像選択用) -->
+  <input 
+    type="file" 
+    id="bgFileInput" 
+    accept="image/png, image/jpeg, image/webp, image/gif" 
+    style="display: none;"
+  >
+
+  <!-- トースト通知コンテナ -->
+  <div class="toast" id="toastBox">
+    <span id="toastMessage"></span>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
